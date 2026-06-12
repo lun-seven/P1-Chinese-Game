@@ -131,7 +131,7 @@
   <div id="obstacles-layer" class="absolute inset-0 z-10 pointer-events-none overflow-hidden"></div>
   <div id="effects-layer" class="absolute inset-0 z-50 pointer-events-none overflow-hidden"></div>
 
-  <div id="spaceship-container" class="absolute w-24 h-32 md:w-32 md:h-40 z-20 pointer-events-none origin-center" style="transform: translate(-50%, -50%);">
+  <div id="spaceship-container" class="absolute w-[125px] h-[166px] md:w-[166px] md:h-[208px] z-20 pointer-events-none origin-center" style="transform: translate(-50%, -50%);">
     <svg viewBox="0 0 100 120" class="w-full h-full xl:drop-shadow-2xl overflow-visible">
       <g class="engine-flicker">
         <ellipse cx="50" cy="115" rx="8" ry="15" fill="#facc15" />
@@ -442,20 +442,20 @@ function loop(time) {
       
       if (Math.abs(dGamma) > 5) {
         let bounded = Math.max(-45, Math.min(45, dGamma));
-        changeX = +(bounded / 45) * 3.25 * dtScale;
+        changeX = +(bounded / 45) * 4.875 * dtScale;
         targetTilt = (bounded / 45) * 30;
       }
       
       if (Math.abs(dBeta) > 5) {
         let bounded = Math.max(-45, Math.min(45, dBeta));
-        changeY = +(bounded / 45) * 3.25 * dtScale;
+        changeY = +(bounded / 45) * 4.875 * dtScale;
       }
     }
     
-    if (keysDown.has('ArrowLeft')) { changeX = -1.95 * dtScale; targetTilt = -25; }
-    if (keysDown.has('ArrowRight')) { changeX = 1.95 * dtScale; targetTilt = 25; }
-    if (keysDown.has('ArrowUp')) { changeY = -1.95 * dtScale; }
-    if (keysDown.has('ArrowDown')) { changeY = 1.95 * dtScale; }
+    if (keysDown.has('ArrowLeft')) { changeX = -2.925 * dtScale; targetTilt = -25; }
+    if (keysDown.has('ArrowRight')) { changeX = 2.925 * dtScale; targetTilt = 25; }
+    if (keysDown.has('ArrowUp')) { changeY = -2.925 * dtScale; }
+    if (keysDown.has('ArrowDown')) { changeY = 2.925 * dtScale; }
 
     if (changeX !== 0 || changeY !== 0) {
       shipLeft = Math.min(Math.max(shipLeft + changeX, 10), 90);
