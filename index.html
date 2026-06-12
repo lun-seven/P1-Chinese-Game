@@ -131,7 +131,7 @@
   <div id="obstacles-layer" class="absolute inset-0 z-10 pointer-events-none overflow-hidden"></div>
   <div id="effects-layer" class="absolute inset-0 z-50 pointer-events-none overflow-hidden"></div>
 
-  <div id="spaceship-container" class="absolute w-[125px] h-[166px] md:w-[166px] md:h-[208px] z-20 pointer-events-none origin-center" style="transform: translate(-50%, -50%);">
+  <div id="spaceship-container" class="absolute w-[80px] h-[106px] md:w-[106px] md:h-[133px] z-20 pointer-events-none origin-center" style="transform: translate(-50%, -50%);">
     <svg viewBox="0 0 100 120" class="w-full h-full xl:drop-shadow-2xl overflow-visible">
       <g class="engine-flicker">
         <ellipse cx="50" cy="115" rx="8" ry="15" fill="#facc15" />
@@ -193,7 +193,7 @@ function generateQuestion() {
 let isPlaying = false;
 let score = 0;
 let level = 1;
-let lives = 5;
+let lives = 10;
 let currentQuestion = generateQuestion();
 
 let shipLeft = 50;
@@ -250,6 +250,39 @@ function gameOver() {
   elGameOverScreen.classList.remove('hidden');
   elGameOverScreen.classList.add('flex');
   elFinalScore.textContent = `最終得分: ${score}`;
+}
+
+let ytPlayer = null;
+
+function onYouTubeIframeAPIReady() {
+  const div = document.createElement('div');
+  div.id = 'yt-player-container';
+  div.style.display = 'none';
+  document.body.appendChild(div);
+
+  ytPlayer = new YT.Player('yt-player-container', {
+    height: '0',
+    width: '0',
+    videoId: 'a_qbIyvBNZQ',
+    playerVars: {
+      'autoplay': 0,
+      'controls': 0,
+      'loop': 1,
+      'playlist': 'a_qbIyvBNZQ'
+    }
+  });
+}
+
+const tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+const firstScriptTag = document.getElementsByTagName('script')[0];
+firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+function playSpaceBGM() {
+  if (ytPlayer && ytPlayer.playVideo) {
+    ytPlayer.setVolume(40);
+    ytPlayer.playVideo();
+  }
 }
 
 function playAudioWithCurve(type, f1, f2, f3) {
@@ -465,10 +498,10 @@ function loop(time) {
     }
     
     // 鍵盤控制也改為套用「加速度」
-    if (keysDown.has('ArrowLeft')) { accelX = -sensitivity * 1.5 * dtScale; targetTilt = -25; }
-    if (keysDown.has('ArrowRight')) { accelX = sensitivity * 1.5 * dtScale; targetTilt = 25; }
-    if (keysDown.has('ArrowUp')) { accelY = -sensitivity * 1.5 * dtScale; }
-    if (keysDown.has('ArrowDown')) { accelY = sensitivity * 1.5 * dtScale; }
+    if (keysDown.has('ArrowLeft')) { accelX = -sensitivity * 1.05 * dtScale; targetTilt = -25; }
+    if (keysDown.has('ArrowRight')) { accelX = sensitivity * 1.05 * dtScale; targetTilt = 25; }
+    if (keysDown.has('ArrowUp')) { accelY = -sensitivity * 1.05 * dtScale; }
+    if (keysDown.has('ArrowDown')) { accelY = sensitivity * 1.05 * dtScale; }
 
     // 【核心物理引擎】：新的速度 = (原本速度 + 加速度) * 摩擦力
     vx = (vx + accelX) * friction;
@@ -517,7 +550,7 @@ function loop(time) {
         el: obs,
         x: Math.random()*80 + 10,
         y: -10,
-        speed: Math.random()*0.6 + 0.4 + level*0.5,
+        speed: (Math.random()*0.6 + 0.4) * (1 + (level - 1) * 0.05),
         rotation: Math.random()*360,
         scaleMult: 1 + (level - 1) * 0.05,
         hit: false
@@ -616,7 +649,7 @@ window.addEventListener('deviceorientation', e => {
 function resetGame() {
   shipLeft = 50; shipTop = 80; tiltAngle = 0;
   vx = 0; vy = 0;
-  score = 0; level = 1; lives = 5;
+  score = 0; level = 1; lives = 10;
   currentQuestion = generateQuestion();
   obstacles.forEach(o => { if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el); });
   obstacles = [];
@@ -661,6 +694,8 @@ elStartBtn.addEventListener('click', async () => {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     audioCtx.resume();
   } catch(e) {}
+  
+  playSpaceBGM();
   
   resetGame();
   
