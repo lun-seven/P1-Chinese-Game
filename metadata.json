@@ -1,0 +1,6 @@
+{
+  "name": "小一專注力航行者",
+  "description": "幫助小一學童以生動活潑的方式，結合左右傾斜操作來訓練專注力與部首配對。",
+  "requestFramePermissions": ["accelerometer", "gyroscope"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
