@@ -199,6 +199,10 @@ let currentQuestion = generateQuestion();
 let shipLeft = 50;
 let shipTop = 80;
 let tiltAngle = 0;
+let vx = 0;
+let vy = 0;
+const friction = 0.88;
+const sensitivity = 0.4;
 
 let t1X = 25, t1Y = 30, t2X = 75, t2Y = 30;
 let targetVxL = 0.05, targetVyL = 0.03, targetVxR = -0.04, targetVyR = 0.06;
@@ -429,7 +433,9 @@ function loop(time) {
     if (cooldown > 0) cooldown -= dt;
     if (damageCooldown > 0) damageCooldown -= dt;
 
-    let changeX = 0, changeY = 0, targetTilt = 0;
+    let targetTilt = 0;
+    let accelX = 0;
+    let accelY = 0;
     
     if (hasGyro) {
       if (baseBeta === null || baseGamma === null) {
@@ -440,28 +446,45 @@ function loop(time) {
       let dGamma = currentGamma - baseGamma;
       let dBeta = currentBeta - baseBeta;
       
-      if (Math.abs(dGamma) > 5) {
-        let bounded = Math.max(-45, Math.min(45, dGamma));
-        changeX = +(bounded / 45) * 9.75 * dtScale;
-        targetTilt = (bounded / 45) * 30;
+      // 加入「平滑死區(Deadzone)」，小於2度不加速，大於2度才開始線性加速
+      const deadzone = 2;
+      
+      if (Math.abs(dGamma) > deadzone) {
+        let activeGamma = dGamma > 0 ? dGamma - deadzone : dGamma + deadzone;
+        let bounded = Math.max(-45, Math.min(45, activeGamma));
+        // 傾斜角度轉換為「加速度 (accel)」，而不是直接的速度
+        accelX = (bounded / 45) * sensitivity * dtScale;
+        targetTilt = (bounded / 45) * 30; // 飛船圖示的視覺傾斜
       }
       
-      if (Math.abs(dBeta) > 5) {
-        let bounded = Math.max(-45, Math.min(45, dBeta));
-        changeY = +(bounded / 45) * 9.75 * dtScale;
+      if (Math.abs(dBeta) > deadzone) {
+        let activeBeta = dBeta > 0 ? dBeta - deadzone : dBeta + deadzone;
+        let bounded = Math.max(-45, Math.min(45, activeBeta));
+        accelY = (bounded / 45) * sensitivity * dtScale;
       }
     }
     
-    if (keysDown.has('ArrowLeft')) { changeX = -5.85 * dtScale; targetTilt = -25; }
-    if (keysDown.has('ArrowRight')) { changeX = 5.85 * dtScale; targetTilt = 25; }
-    if (keysDown.has('ArrowUp')) { changeY = -5.85 * dtScale; }
-    if (keysDown.has('ArrowDown')) { changeY = 5.85 * dtScale; }
+    // 鍵盤控制也改為套用「加速度」
+    if (keysDown.has('ArrowLeft')) { accelX = -sensitivity * 1.5 * dtScale; targetTilt = -25; }
+    if (keysDown.has('ArrowRight')) { accelX = sensitivity * 1.5 * dtScale; targetTilt = 25; }
+    if (keysDown.has('ArrowUp')) { accelY = -sensitivity * 1.5 * dtScale; }
+    if (keysDown.has('ArrowDown')) { accelY = sensitivity * 1.5 * dtScale; }
 
-    if (changeX !== 0 || changeY !== 0) {
-      shipLeft = Math.min(Math.max(shipLeft + changeX, 10), 90);
-      shipTop = Math.min(Math.max(shipTop + changeY, 15), 90);
-    }
+    // 【核心物理引擎】：新的速度 = (原本速度 + 加速度) * 摩擦力
+    vx = (vx + accelX) * friction;
+    vy = (vy + accelY) * friction;
+
+    // 將算好的速度加到飛船的位置上
+    shipLeft += vx;
+    shipTop += vy;
+
+    // 碰到邊界時的處理（將速度歸零，避免卡在邊界抖動）
+    if (shipLeft < 10) { shipLeft = 10; vx = 0; }
+    if (shipLeft > 90) { shipLeft = 90; vx = 0; }
+    if (shipTop < 15) { shipTop = 15; vy = 0; }
+    if (shipTop > 90) { shipTop = 90; vy = 0; }
     
+    // 讓飛船視覺上的旋轉更平滑
     tiltAngle += (targetTilt - tiltAngle) * 0.15;
     
     elShip.style.left = `${shipLeft}%`;
@@ -592,6 +615,7 @@ window.addEventListener('deviceorientation', e => {
 
 function resetGame() {
   shipLeft = 50; shipTop = 80; tiltAngle = 0;
+  vx = 0; vy = 0;
   score = 0; level = 1; lives = 5;
   currentQuestion = generateQuestion();
   obstacles.forEach(o => { if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el); });
