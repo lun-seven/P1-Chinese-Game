@@ -77,10 +77,19 @@
   </button>
 </div>
 
+<!-- Game Over Screen -->
+<div id="game-over-screen" class="absolute inset-0 z-50 flex-col items-center justify-center bg-red-950/95 backdrop-blur-sm transition-opacity duration-500 hidden">
+  <h1 class="text-5xl md:text-7xl font-bold mb-4 font-mono text-red-500 text-center px-4">GAME OVER</h1>
+  <p class="text-2xl md:text-3xl text-white mb-8 text-center" id="final-score-ui">最終得分: 0</p>
+  <button id="restart-game-btn" class="px-8 py-5 bg-red-600 hover:bg-red-500 active:scale-95 transition-all text-white text-2xl md:text-3xl font-bold rounded-full shadow-[0_0_20px_rgba(220,38,38,0.5)] cursor-pointer">
+    🔄 重新開始
+  </button>
+</div>
+
 <!-- Main Game UI -->
 <div id="game-ui" class="absolute inset-0 z-10 pointer-events-none flex-col hidden">
-  <div class="flex justify-between items-start px-4 md:px-8 pt-8 w-full">
-    <div class="bg-slate-900/80 border-2 border-lime-400 px-6 py-2 rounded-xl backdrop-blur-md shadow-[0_0_15px_rgba(163,230,53,0.3)] flex items-center space-x-4">
+  <div class="flex justify-between items-start px-4 md:px-8 pt-8 w-full pointer-events-auto">
+    <div class="bg-slate-900/80 border-2 border-lime-400 px-6 py-2 rounded-xl backdrop-blur-md shadow-[0_0_15px_rgba(163,230,53,0.3)] flex items-center space-x-4 pointer-events-none">
       <div class="text-center">
         <div class="text-xs text-lime-300 font-bold uppercase tracking-widest text-center">關卡</div>
         <div id="level-ui" class="text-2xl font-black text-white text-center tabular-nums">Level 1</div>
@@ -91,9 +100,12 @@
         <div id="score-ui" class="text-2xl font-black text-white text-center tabular-nums">0</div>
       </div>
     </div>
-    <h2 class="text-xl md:text-3xl font-bold text-lime-300 bg-slate-900/80 py-2 px-6 rounded-full backdrop-blur-md shadow-lg border border-lime-300/30 text-center max-w-md pointer-events-none">
-       移動到正確部件
-    </h2>
+    <button id="restart-btn" class="bg-slate-900/80 border-2 border-fuchsia-500 text-fuchsia-400 hover:bg-fuchsia-500 hover:text-white px-6 py-3 rounded-full cursor-pointer pointer-events-auto transition-colors z-50 font-bold tracking-widest flex items-center shadow-[0_0_15px_rgba(217,70,239,0.3)]">
+       重新開始
+    </button>
+  </div>
+  
+  <div id="lives-ui" class="absolute top-28 left-4 md:left-8 z-40 flex flex-col space-y-1 md:space-y-2 pointer-events-none w-6 md:w-8">
   </div>
   
   <div id="target-left" class="absolute w-[70px] md:w-[100px] flex flex-col justify-center items-center pointer-events-none transform -translate-x-1/2 -translate-y-1/2">
@@ -181,6 +193,7 @@ function generateQuestion() {
 let isPlaying = false;
 let score = 0;
 let level = 1;
+let lives = 5;
 let currentQuestion = generateQuestion();
 
 let shipLeft = 50;
@@ -190,9 +203,10 @@ let tiltAngle = 0;
 let t1X = 25, t1Y = 30, t2X = 75, t2Y = 30;
 let targetVxL = 0.05, targetVyL = 0.03, targetVxR = -0.04, targetVyR = 0.06;
 
-let gammaVal = 0, betaVal = 0;
+let currentGamma = 0, currentBeta = 0;
 let hasGyro = false;
-let baseBeta = 45;
+let baseBeta = null;
+let baseGamma = null;
 const keysDown = new Set();
 let obstacles = [];
 let cooldown = 0;
@@ -213,6 +227,26 @@ const elObstaclesLayer = document.getElementById('obstacles-layer');
 const elEffectsLayer = document.getElementById('effects-layer');
 const elDamageFlash = document.getElementById('damage-flash');
 const warpBg = document.getElementById('warp-bg');
+const elLivesUI = document.getElementById('lives-ui');
+const elGameOverScreen = document.getElementById('game-over-screen');
+const elRestartGameBtn = document.getElementById('restart-game-btn');
+const elFinalScore = document.getElementById('final-score-ui');
+
+function updateLivesUI() {
+  elLivesUI.innerHTML = '';
+  for(let i=0; i<lives; i++) {
+    const icon = document.createElement('div');
+    icon.innerHTML = `<svg viewBox="0 0 100 120" class="w-full h-auto drop-shadow-md opacity-90"><path d="M 30 70 L 10 110 L 30 100 Z" fill="#ef4444" /><path d="M 70 70 L 90 110 L 70 100 Z" fill="#ef4444" /><rect x="30" y="30" width="40" height="70" rx="20" fill="#e2e8f0" /><path d="M 30 40 Q 50 -10 70 40 Z" fill="#cbd5e1" /><circle cx="50" cy="55" r="16" fill="#cffafe" stroke="#475569" stroke-width="4" /><rect x="40" y="100" width="20" height="10" fill="#475569" /></svg>`;
+    elLivesUI.appendChild(icon);
+  }
+}
+
+function gameOver() {
+  isPlaying = false;
+  elGameOverScreen.classList.remove('hidden');
+  elGameOverScreen.classList.add('flex');
+  elFinalScore.textContent = `最終得分: ${score}`;
+}
 
 function playAudioWithCurve(type, f1, f2, f3) {
   try {
@@ -235,6 +269,56 @@ function playAudioWithCurve(type, f1, f2, f3) {
 function playSuccessSound() { playAudioWithCurve('sine', 400, 800, 1200); }
 function playFailSound() { playAudioWithCurve('triangle', 300, 150); }
 function playWarningBeep() { playAudioWithCurve('sawtooth', 200, 50); }
+
+function playLevelUpSound() {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    [ 400, 500, 600, 800 ].forEach((freq, idx) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.15);
+      gain.gain.setValueAtTime(0, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime + idx * 0.15 + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.15 + 0.4);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(audioCtx.currentTime + idx * 0.15);
+      osc.stop(audioCtx.currentTime + idx * 0.15 + 0.4);
+    });
+  } catch(e) {}
+}
+
+function triggerLevelUp() {
+  playLevelUpSound();
+  
+  obstacles.forEach(o => { if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el); });
+  obstacles = [];
+
+  const text = document.createElement('div');
+  text.className = 'absolute top-1/2 left-1/2 z-50 text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-lime-300 to-cyan-300 whitespace-nowrap pointer-events-none';
+  text.style.filter = 'drop-shadow(0 0 20px rgba(163,230,53,0.8))';
+  text.style.transition = 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+  text.style.transform = 'translate(-50%, -50%) scale(0.5)';
+  text.style.opacity = '0';
+  text.textContent = 'LEVEL UP!';
+  
+  elEffectsLayer.appendChild(text);
+  
+  requestAnimationFrame(() => {
+    text.style.opacity = '1';
+    text.style.transform = 'translate(-50%, -50%) scale(1.2)';
+  });
+  
+  setTimeout(() => {
+    text.style.transition = 'all 0.5s ease-in';
+    text.style.opacity = '0';
+    text.style.transform = 'translate(-50%, -50%) scale(2)';
+    setTimeout(() => {
+      if(elEffectsLayer.contains(text)) elEffectsLayer.removeChild(text);
+    }, 500);
+  }, 1500);
+}
 
 function initWarpStars() {
   warpBg.innerHTML = '';
@@ -348,25 +432,30 @@ function loop(time) {
     let changeX = 0, changeY = 0, targetTilt = 0;
     
     if (hasGyro) {
-      if (gammaVal !== null && Math.abs(gammaVal) > 5) {
-        const bounded = Math.max(-45, Math.min(45, gammaVal));
-        changeX = +(bounded / 45) * 2.5 * dtScale;
+      if (baseBeta === null || baseGamma === null) {
+        baseBeta = currentBeta;
+        baseGamma = currentGamma;
+      }
+      
+      let dGamma = currentGamma - baseGamma;
+      let dBeta = currentBeta - baseBeta;
+      
+      if (Math.abs(dGamma) > 5) {
+        let bounded = Math.max(-45, Math.min(45, dGamma));
+        changeX = +(bounded / 45) * 3.25 * dtScale;
         targetTilt = (bounded / 45) * 30;
       }
       
-      if (betaVal !== null) {
-        let bounded = betaVal - baseBeta;
-        if (Math.abs(bounded) > 5) {
-          bounded = Math.max(-45, Math.min(45, bounded));
-          changeY = +(bounded / 45) * 2.5 * dtScale;
-        }
+      if (Math.abs(dBeta) > 5) {
+        let bounded = Math.max(-45, Math.min(45, dBeta));
+        changeY = +(bounded / 45) * 3.25 * dtScale;
       }
     }
     
-    if (keysDown.has('ArrowLeft')) { changeX = -1.5 * dtScale; targetTilt = -25; }
-    if (keysDown.has('ArrowRight')) { changeX = 1.5 * dtScale; targetTilt = 25; }
-    if (keysDown.has('ArrowUp')) { changeY = -1.5 * dtScale; }
-    if (keysDown.has('ArrowDown')) { changeY = 1.5 * dtScale; }
+    if (keysDown.has('ArrowLeft')) { changeX = -1.95 * dtScale; targetTilt = -25; }
+    if (keysDown.has('ArrowRight')) { changeX = 1.95 * dtScale; targetTilt = 25; }
+    if (keysDown.has('ArrowUp')) { changeY = -1.95 * dtScale; }
+    if (keysDown.has('ArrowDown')) { changeY = 1.95 * dtScale; }
 
     if (changeX !== 0 || changeY !== 0) {
       shipLeft = Math.min(Math.max(shipLeft + changeX, 10), 90);
@@ -438,16 +527,20 @@ function loop(time) {
     }
 
     if(didHitOb && damageCooldown <= 0) {
-      score = Math.max(0, score - 10);
-      spawnFloatingText("-10", shipLeft, shipTop - 10, "#ef4444", "rgba(239,68,68,1)");
+      lives = Math.max(0, lives - 1);
+      spawnFloatingText("-1 生命", shipLeft, shipTop - 10, "#ef4444", "rgba(239,68,68,1)");
       playWarningBeep();
       damageCooldown = 1500;
-      updateTargetsUI();
+      updateLivesUI();
       
       elDamageFlash.style.opacity = '1';
       setTimeout(()=>elDamageFlash.style.opacity='0', 300);
       elShip.style.animation = 'damageBlink 0.2s infinite alternate';
       setTimeout(()=>elShip.style.animation='none', 1500);
+      
+      if (lives <= 0) {
+        gameOver();
+      }
     }
 
     let hitZone = null;
@@ -459,8 +552,14 @@ function loop(time) {
       const isCorrect = (hitZone === 'left' && q.isLeftCorrect) || (hitZone === 'right' && !q.isLeftCorrect);
       if(isCorrect) {
         score += 100;
-        level = Math.min(5, Math.floor(score/1000)+1);
-        playSuccessSound();
+        const newLevel = Math.min(5, Math.floor(score/1000)+1);
+        if (newLevel > level) {
+          level = newLevel;
+          triggerLevelUp();
+        } else {
+          playSuccessSound();
+        }
+        
         spawnFloatingText("+100", shipLeft, shipTop-10, "#4ade80", "rgba(74,222,128,1)");
         spawnExplosion(shipLeft, shipTop, q.correctRadical.hex);
         
@@ -487,9 +586,42 @@ window.addEventListener('deviceorientation', e => {
   if (e.gamma === null || e.beta === null) return;
   if (e.gamma === 0 && e.beta === 0 && e.alpha === 0) return;
   hasGyro = true;
-  gammaVal = e.gamma;
-  betaVal = e.beta;
+  currentGamma = e.gamma;
+  currentBeta = e.beta;
 });
+
+function resetGame() {
+  shipLeft = 50; shipTop = 80; tiltAngle = 0;
+  score = 0; level = 1; lives = 5;
+  currentQuestion = generateQuestion();
+  obstacles.forEach(o => { if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el); });
+  obstacles = [];
+  t1X = 25; t1Y = 30; t2X = 75; t2Y = 30;
+  targetVxL = 0.05; targetVyL = 0.03; targetVxR = -0.04; targetVyR = 0.06;
+  
+  baseBeta = null;
+  baseGamma = null;
+  
+  updateTargetsUI();
+  updateWarpSpeed();
+  updateLivesUI();
+  
+  elGameOverScreen.classList.add('hidden');
+  elGameOverScreen.classList.remove('flex');
+}
+
+const elRestartBtn = document.getElementById('restart-btn');
+if(elRestartBtn) {
+  elRestartBtn.addEventListener('click', () => {
+    resetGame();
+  });
+}
+if(elRestartGameBtn) {
+  elRestartGameBtn.addEventListener('click', () => {
+    resetGame();
+    isPlaying = true;
+  });
+}
 window.addEventListener('keydown', e => keysDown.add(e.key));
 window.addEventListener('keyup', e => keysDown.delete(e.key));
 
@@ -501,29 +633,17 @@ elStartBtn.addEventListener('click', async () => {
     } catch(err) { console.error(err); }
   }
   
-  if (hasGyro && betaVal !== null) {
-    baseBeta = betaVal;
-  }
-  
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     audioCtx.resume();
   } catch(e) {}
   
-  shipLeft = 50; shipTop = 80; tiltAngle = 0;
-  score = 0; level = 1;
-  currentQuestion = generateQuestion();
-  obstacles.forEach(o => { if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el); });
-  obstacles = [];
-  t1X = 25; t1Y = 30; t2X = 75; t2Y = 30;
-  targetVxL = 0.05; targetVyL = 0.03; targetVxR = -0.04; targetVyR = 0.06;
+  resetGame();
   
   elStartScreen.classList.add('hidden');
   elGameUI.classList.remove('hidden');
   elGameUI.classList.add('flex');
   isPlaying = true;
-  updateTargetsUI();
-  updateWarpSpeed();
 });
 
 updateTargetsUI();
