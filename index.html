@@ -442,20 +442,20 @@ function loop(time) {
       
       if (Math.abs(dGamma) > 5) {
         let bounded = Math.max(-45, Math.min(45, dGamma));
-        changeX = +(bounded / 45) * 4.875 * dtScale;
+        changeX = +(bounded / 45) * 9.75 * dtScale;
         targetTilt = (bounded / 45) * 30;
       }
       
       if (Math.abs(dBeta) > 5) {
         let bounded = Math.max(-45, Math.min(45, dBeta));
-        changeY = +(bounded / 45) * 4.875 * dtScale;
+        changeY = +(bounded / 45) * 9.75 * dtScale;
       }
     }
     
-    if (keysDown.has('ArrowLeft')) { changeX = -2.925 * dtScale; targetTilt = -25; }
-    if (keysDown.has('ArrowRight')) { changeX = 2.925 * dtScale; targetTilt = 25; }
-    if (keysDown.has('ArrowUp')) { changeY = -2.925 * dtScale; }
-    if (keysDown.has('ArrowDown')) { changeY = 2.925 * dtScale; }
+    if (keysDown.has('ArrowLeft')) { changeX = -5.85 * dtScale; targetTilt = -25; }
+    if (keysDown.has('ArrowRight')) { changeX = 5.85 * dtScale; targetTilt = 25; }
+    if (keysDown.has('ArrowUp')) { changeY = -5.85 * dtScale; }
+    if (keysDown.has('ArrowDown')) { changeY = 5.85 * dtScale; }
 
     if (changeX !== 0 || changeY !== 0) {
       shipLeft = Math.min(Math.max(shipLeft + changeX, 10), 90);
