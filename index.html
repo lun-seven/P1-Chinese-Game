@@ -180,13 +180,13 @@
   </div>
   
   <!-- Attack Buttons -->
-  <div class="absolute bottom-8 left-4 md:left-8 z-30 pointer-events-auto">
+  <div class="absolute bottom-28 md:bottom-12 left-4 md:left-8 z-30 pointer-events-auto">
     <button id="attack-left-btn" class="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-tr from-red-700 to-red-500 hover:from-red-600 hover:to-red-400 active:scale-90 border-2 border-red-300 text-white font-extrabold rounded-full flex flex-col items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.7)] transition-all cursor-pointer select-none">
       <span class="text-2xl md:text-3xl">💥</span>
       <span class="text-[10px] md:text-xs font-black tracking-wider uppercase">攻擊</span>
     </button>
   </div>
-  <div class="absolute bottom-8 right-4 md:right-8 z-30 pointer-events-auto">
+  <div class="absolute bottom-28 md:bottom-12 right-4 md:right-8 z-30 pointer-events-auto">
     <button id="attack-right-btn" class="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-tr from-red-700 to-red-500 hover:from-red-600 hover:to-red-400 active:scale-90 border-2 border-red-300 text-white font-extrabold rounded-full flex flex-col items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.7)] transition-all cursor-pointer select-none">
       <span class="text-2xl md:text-3xl">💥</span>
       <span class="text-[10px] md:text-xs font-black tracking-wider uppercase">攻擊</span>
@@ -325,6 +325,7 @@ function fireBullet() {
 }
 
 function tryFire() {
+  if (!isPlaying || isPaused) return;
   const now = performance.now();
   if (now - lastFireTime > 250) {
     fireBullet();
@@ -554,7 +555,8 @@ function spawnExplosion(x, y, hexColor) {
 }
 
 function loop(time) {
-  const dt = Math.min(time - lastTime, 50);
+  if (!time) time = performance.now();
+  const dt = Math.max(0, Math.min(time - lastTime, 50)) || 16;
   lastTime = time;
   if (isPaused) {
     requestAnimationFrame(loop);
@@ -877,20 +879,23 @@ if(elRestartGameBtn) {
   });
 }
 if (elPauseBtn) {
-  elPauseBtn.addEventListener('click', () => {
+  elPauseBtn.addEventListener('click', (e) => {
     togglePause(!isPaused);
+    if(e.target) e.target.blur();
   });
 }
 if (elResumeGameBtn) {
-  elResumeGameBtn.addEventListener('click', () => {
+  elResumeGameBtn.addEventListener('click', (e) => {
     togglePause(false);
+    if(e.target) e.target.blur();
   });
 }
 if (elPauseRestartGameBtn) {
-  elPauseRestartGameBtn.addEventListener('click', () => {
+  elPauseRestartGameBtn.addEventListener('click', (e) => {
     togglePause(false);
     resetGame();
     isPlaying = true;
+    if(e.target) e.target.blur();
   });
 }
 
@@ -916,7 +921,9 @@ window.addEventListener('keydown', e => {
   }
   if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
     e.preventDefault();
-    togglePause(!isPaused);
+    if (!e.repeat) {
+      togglePause(!isPaused);
+    }
   }
 });
 window.addEventListener('keyup', e => keysDown.delete(e.key));
