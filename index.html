@@ -1,23 +1,208 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { motion, useMotionValue, useTransform, AnimatePresence } from 'motion/react';
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>小一專注力航行者</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      touch-action: none;
+      font-family: sans-serif;
+      user-select: none;
+      background: linear-gradient(to bottom, #1e1b4b, #0f172a);
+      color: white;
+    }
+    
+    @keyframes warp {
+      0% { transform: translateY(-100vh); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(100vh); opacity: 0; }
+    }
+    @keyframes damageBlink {
+      0% { opacity: 1; filter: drop-shadow(0 0 10px rgba(239,68,68,1)); }
+      100% { opacity: 0.3; filter: drop-shadow(0 0 20px rgba(239,68,68,1)); }
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes spin-reverse {
+      0% { transform: rotate(360deg); }
+      100% { transform: rotate(0deg); }
+    }
+    
+    .animate-spin-15 { animation: spin 15s linear infinite; }
+    .animate-spin-20-reverse { animation: spin-reverse 20s linear infinite; }
+    .engine-flicker { transform-origin: 50% 100%; animation: blink 0.1s infinite alternate; }
+    @keyframes blink { from { opacity: 0.8; transform: scaleY(0.9); } to { opacity: 1; transform: scaleY(1.1); } }
+    
+    .floating-text {
+      position: absolute;
+      z-index: 50;
+      font-weight: 900;
+      pointer-events: none;
+      transition: transform 1.5s ease-out, opacity 1.5s ease-out;
+      transform: translate(-50%, -50%);
+    }
+    .explosion-particle {
+      position: absolute;
+      border-radius: 50%;
+      transform-origin: center;
+      mix-blend-mode: screen;
+      transition: transform 0.8s ease-out, opacity 0.8s ease-out;
+    }
+    .paused-animation, .paused-animation * {
+      animation-play-state: paused !important;
+    }
+  </style>
+</head>
+<body class="relative w-full h-screen font-sans flex flex-col">
 
+<!-- Warp Speed Background -->
+<div id="warp-bg" class="absolute inset-0 overflow-hidden pointer-events-none z-0"></div>
+
+<!-- Damage Flash -->
+<div id="damage-flash" class="absolute inset-0 bg-red-600/60 z-50 pointer-events-none opacity-0 transition-opacity duration-300"></div>
+
+<!-- Start Screen -->
+<div id="start-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-indigo-950/95 backdrop-blur-sm transition-opacity duration-500">
+  <h1 class="text-4xl md:text-5xl font-bold mb-4 font-mono text-lime-300 text-center px-4">小一專注力航行者</h1>
+  <p class="text-xl md:text-2xl text-slate-300 mb-6 max-w-md text-center">
+    請讓裝置保持水平<br>
+    <span class="text-sm text-slate-400 mt-2 block">(電腦用戶可使用方向鍵操作)</span>
+  </p>
+
+  <div class="text-center text-slate-300 text-base md:text-lg bg-indigo-900/40 border border-indigo-500/30 px-6 py-4 rounded-2xl max-w-xs md:max-w-md mb-8 select-none shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+    <div class="font-bold text-amber-300 mb-2">🎮 太空船操控教學：</div>
+    左右/前後傾斜來控制太空船<br>
+    ( ⬅️ ➡️ ⬆️ ⬇️ / 空白鍵 💥 攻擊 )
+  </div>
+
+  <button id="start-btn" class="px-8 py-5 bg-fuchsia-500 hover:bg-fuchsia-400 active:scale-95 transition-all text-white text-2xl md:text-3xl font-bold rounded-full shadow-[0_0_20px_rgba(217,70,239,0.5)] cursor-pointer">
+    🚀 點擊開始航行
+  </button>
+</div>
+
+<!-- Game Over Screen -->
+<div id="game-over-screen" class="absolute inset-0 z-50 flex-col items-center justify-center bg-red-950/95 backdrop-blur-sm transition-opacity duration-500 hidden">
+  <h1 class="text-5xl md:text-7xl font-bold mb-4 font-mono text-red-500 text-center px-4">GAME OVER</h1>
+  <p class="text-2xl md:text-3xl text-white mb-8 text-center" id="final-score-ui">最終得分: 0</p>
+  <button id="restart-game-btn" class="px-8 py-5 bg-red-600 hover:bg-red-500 active:scale-95 transition-all text-white text-2xl md:text-3xl font-bold rounded-full shadow-[0_0_20px_rgba(220,38,38,0.5)] cursor-pointer">
+    🔄 重新開始
+  </button>
+</div>
+
+<!-- Pause Screen -->
+<div id="pause-screen" class="absolute inset-0 z-50 flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md transition-opacity duration-300 hidden">
+  <div class="bg-indigo-950/80 border-2 border-amber-400 p-8 md:p-12 rounded-3xl shadow-[0_0_40px_rgba(245,158,11,0.4)] flex flex-col items-center max-w-md mx-4">
+    <h1 class="text-4xl md:text-5xl font-extrabold mb-4 font-mono text-amber-400 text-center tracking-wide flex items-center gap-2 select-none">
+      ⏸️ 遊戲暫停
+    </h1>
+    <p class="text-lg md:text-xl text-slate-300 mb-8 text-center leading-relaxed select-none">
+      太空船已進入安全靜止軌道。<br>隨時可以重新開始或繼續航行！
+    </p>
+    <div class="flex flex-col gap-4 w-full">
+      <button id="resume-game-btn" class="px-6 py-4 bg-amber-500 hover:bg-amber-400 active:scale-95 transition-all text-white text-xl md:text-2xl font-bold rounded-full shadow-[0_0_20px_rgba(245,158,11,0.5)] cursor-pointer text-center select-none">
+        ▶️ 繼續航行
+      </button>
+      <button id="pause-restart-game-btn" class="px-6 py-4 bg-fuchsia-600 hover:bg-fuchsia-500 active:scale-95 transition-all text-white text-xl font-bold rounded-full shadow-[0_0_20px_rgba(217,70,239,0.3)] cursor-pointer text-center select-none">
+        🔄 重新開始
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Main Game UI -->
+<div id="game-ui" class="absolute inset-0 z-10 pointer-events-none flex-col hidden">
+  <div class="flex justify-between items-start px-4 md:px-8 pt-8 w-full pointer-events-auto">
+    <div class="bg-slate-900/80 border-2 border-lime-400 px-6 py-2 rounded-xl backdrop-blur-md shadow-[0_0_15px_rgba(163,230,53,0.3)] flex items-center space-x-4 pointer-events-none">
+      <div class="text-center">
+        <div class="text-xs text-lime-300 font-bold uppercase tracking-widest text-center">關卡</div>
+        <div id="level-ui" class="text-2xl font-black text-white text-center tabular-nums">Level 1</div>
+      </div>
+      <div class="w-px h-10 bg-lime-400/30"></div>
+      <div class="text-center">
+        <div class="text-xs text-lime-300 font-bold uppercase tracking-widest text-center">分數</div>
+        <div id="score-ui" class="text-2xl font-black text-white text-center tabular-nums">0</div>
+      </div>
+    </div>
+    <div class="flex space-x-2 md:space-x-4 pointer-events-auto z-50">
+      <button id="pause-btn" class="bg-slate-900/80 border-2 border-amber-500 text-amber-400 hover:bg-amber-500 hover:text-white px-4 py-2 md:px-6 md:py-3 rounded-full cursor-pointer transition-all font-bold tracking-widest flex items-center gap-1 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+         ⏸️ 暫停
+      </button>
+    </div>
+  </div>
+  
+  <div id="lives-ui" class="absolute top-28 left-4 md:left-8 z-40 flex flex-col space-y-1 md:space-y-2 pointer-events-none w-6 md:w-8">
+  </div>
+  
+  <div id="target-left" class="absolute w-[70px] md:w-[100px] flex flex-col justify-center items-center pointer-events-none transform -translate-x-1/2 -translate-y-1/2">
+    <div class="relative w-full aspect-square flex items-center justify-center pointer-events-none">
+      <div id="tl-ring1" class="absolute inset-0 border-[4px] border-dashed rounded-full animate-spin-15"></div>
+      <div id="tl-ring2" class="absolute inset-1.5 border-2 rounded-full animate-spin-20-reverse opacity-50"></div>
+      <div id="tl-bg" class="relative z-10 w-11 h-11 md:w-14 md:h-14 bg-slate-900 border-2 md:border-4 rounded-full flex flex-col items-center justify-center shadow-lg">
+        <span id="tl-text" class="text-xl md:text-2xl font-black text-white"></span>
+      </div>
+    </div>
+  </div>
+  
+  <div id="target-right" class="absolute w-[70px] md:w-[100px] flex flex-col justify-center items-center pointer-events-none transform -translate-x-1/2 -translate-y-1/2">
+    <div class="relative w-full aspect-square flex items-center justify-center pointer-events-none">
+      <div id="tr-ring1" class="absolute inset-0 border-[4px] border-dashed rounded-full animate-spin-15"></div>
+      <div id="tr-ring2" class="absolute inset-1.5 border-2 rounded-full animate-spin-20-reverse opacity-50"></div>
+      <div id="tr-bg" class="relative z-10 w-11 h-11 md:w-14 md:h-14 bg-slate-900 border-2 md:border-4 rounded-full flex flex-col items-center justify-center shadow-lg">
+        <span id="tr-text" class="text-xl md:text-2xl font-black text-white"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="obstacles-layer" class="absolute inset-0 z-10 pointer-events-none overflow-hidden"></div>
+  <div id="effects-layer" class="absolute inset-0 z-50 pointer-events-none overflow-hidden"></div>
+
+  <div id="spaceship-container" class="absolute w-[80px] h-[106px] md:w-[106px] md:h-[133px] z-20 pointer-events-none origin-center" style="transform: translate(-50%, -50%);">
+    <svg viewBox="0 0 100 120" class="w-full h-full xl:drop-shadow-2xl overflow-visible">
+      <g class="engine-flicker">
+        <ellipse cx="50" cy="115" rx="8" ry="15" fill="#facc15" />
+        <ellipse cx="50" cy="115" rx="4" ry="25" fill="#ef4444" opacity="0.8" />
+      </g>
+      <path d="M 30 70 L 10 110 L 30 100 Z" fill="#ef4444" />
+      <path d="M 70 70 L 90 110 L 70 100 Z" fill="#ef4444" />
+      <rect x="30" y="30" width="40" height="70" rx="20" fill="#e2e8f0" />
+      <path d="M 30 40 Q 50 -10 70 40 Z" fill="#cbd5e1" />
+      <circle cx="50" cy="55" r="16" fill="#cffafe" stroke="#475569" stroke-width="4" />
+      <text id="spaceship-word" x="50" y="57" dominant-baseline="middle" text-anchor="middle" font-size="24" font-weight="bold" fill="#0f172a"></text>
+      <rect x="40" y="100" width="20" height="10" fill="#475569" />
+    </svg>
+  </div>
+  
+  <!-- Attack Buttons -->
+  <div class="absolute bottom-28 md:bottom-12 left-4 md:left-8 z-30 pointer-events-auto">
+    <button id="attack-left-btn" class="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-tr from-red-700 to-red-500 hover:from-red-600 hover:to-red-400 active:scale-90 border-2 border-red-300 text-white font-extrabold rounded-full flex flex-col items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.7)] transition-all cursor-pointer select-none">
+      <span class="text-2xl md:text-3xl">💥</span>
+      <span class="text-[10px] md:text-xs font-black tracking-wider uppercase">攻擊</span>
+    </button>
+  </div>
+  <div class="absolute bottom-28 md:bottom-12 right-4 md:right-8 z-30 pointer-events-auto">
+    <button id="attack-right-btn" class="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-tr from-red-700 to-red-500 hover:from-red-600 hover:to-red-400 active:scale-90 border-2 border-red-300 text-white font-extrabold rounded-full flex flex-col items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.7)] transition-all cursor-pointer select-none">
+      <span class="text-2xl md:text-3xl">💥</span>
+      <span class="text-[10px] md:text-xs font-black tracking-wider uppercase">攻擊</span>
+    </button>
+  </div>
+</div>
+
+<script>
 const radicalsData = [
-  { radical: '木', hex: '#f97316' },
-  { radical: '水', hex: '#06b6d4' },
-  { radical: '火', hex: '#ef4444' },
-  { radical: '人', hex: '#eab308' },
-  { radical: '手', hex: '#a855f7' },
-  { radical: '口', hex: '#22c55e' },
-  { radical: '草', hex: '#4ade80' },
-  { radical: '女', hex: '#ec4899' },
-  { radical: '辵', hex: '#8b5cf6' },
-  { radical: '肉', hex: '#fb923c' },
-  { radical: '月', hex: '#f43f5e' },
-  { radical: '言', hex: '#3b82f6' },
-  { radical: '日', hex: '#facc15' },
+  { radical: '木', hex: '#f97316' }, { radical: '水', hex: '#06b6d4' }, { radical: '火', hex: '#ef4444' }, { radical: '人', hex: '#eab308' },
+  { radical: '手', hex: '#a855f7' }, { radical: '口', hex: '#22c55e' }, { radical: '草', hex: '#4ade80' }, { radical: '女', hex: '#ec4899' },
+  { radical: '辵', hex: '#8b5cf6' }, { radical: '肉', hex: '#fb923c' }, { radical: '月', hex: '#f43f5e' }, { radical: '言', hex: '#3b82f6' }, { radical: '日', hex: '#facc15' },
 ];
 
-const wordsMap: Record<string, string[]> = {
+const wordsMap = {
+
   '木': "木 校 林 森 枝 板 杯 椅 桌 梅 桃 柳 根 樹 橋 村 材 植 棉 棋 棍".split(' '),
   '水': "水 河 海 洗 江 流 浪 汗 淚 池 洋 活 涼 深 清 滿 渴 游 波".split(' '),
   '口': "口 吃 喝 唱 叫 吹 吐 吸 呼 哈 呢 哇 哪 吧 味 吵 嘴 哭".split(' '),
@@ -31,17 +216,14 @@ const wordsMap: Record<string, string[]> = {
   '月': "月 服 期 朋 朝 望 朗".split(' '),
   '言': "言 說 話 語 認 識 讀 課 誰 記 許 詩 請 謝 講 詞 試 誠".split(' '),
   '日': "日 早 明 星 春 昨 時 晚 晴 暖 暗 晨 景 暑 曉".split(' ')
+
 };
 
-const wordsBank = Object.entries(wordsMap).flatMap(([radical, words]) => 
-  words.map(word => ({ word, radical }))
-);
+const wordsBank = Object.entries(wordsMap).flatMap(([radical, words]) => words.map(word => ({ word, radical })));
 
-type Obstacle = { id: number; x: number; y: number; speed: number; hit: boolean; rotation: number };
-
-const generateQuestion = () => {
+function generateQuestion() {
   const wordObj = wordsBank[Math.floor(Math.random() * wordsBank.length)];
-  const correctRadical = radicalsData.find(r => r.radical === wordObj.radical)!;
+  const correctRadical = radicalsData.find(r => r.radical === wordObj.radical);
   const wrongOptions = radicalsData.filter(r => r.radical !== correctRadical.radical);
   const wrongRadical = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
   return {
@@ -50,634 +232,727 @@ const generateQuestion = () => {
     wrongRadical,
     isLeftCorrect: Math.random() > 0.5
   };
-};
+}
 
-export default function App() {
-  const [gameState, setGameState] = useState<'start' | 'playing'>('start');
-  const [score, setScore] = useState(0);
-  const [obstacles, setObstacles] = useState<Obstacle[]>([]);
-  const [, setFloatingTextsVal] = useState(0);
-  const [currentQuestion, setCurrentQuestion] = useState(generateQuestion);
-  const level = Math.min(5, Math.floor(score / 1000) + 1);
-  
-  const currentQuestionRef = useRef(currentQuestion);
-  useEffect(() => { currentQuestionRef.current = currentQuestion; }, [currentQuestion]);
-  
-  const isPlayingRef = useRef(false);
-  useEffect(() => { isPlayingRef.current = gameState === 'playing'; }, [gameState]);
-  
-  const levelRef = useRef(level);
-  useEffect(() => { levelRef.current = level; }, [level]);
+let isPlaying = false;
+let isPaused = false;
+let score = 0;
+let level = 1;
+let lives = 10;
+let currentQuestion = generateQuestion();
 
-  const leftPercent = useMotionValue(50);
-  const topPercent = useMotionValue(80);
-  const tiltAngle = useMotionValue(0);
+let shipLeft = 50;
+let shipTop = 80;
+let tiltAngle = 0;
+let vx = 0;
+let vy = 0;
+const friction = 0.88;
+const sensitivity = 0.4;
 
-  const t1X = useMotionValue(25);
-  const t1Y = useMotionValue(30);
-  const t2X = useMotionValue(75);
-  const t2Y = useMotionValue(30);
+let t1X = 25, t1Y = 30, t2X = 75, t2Y = 30;
+let targetVxL = 0.05, targetVyL = 0.03, targetVxR = -0.04, targetVyR = 0.06;
 
-  const gammaRef = useRef<number | null>(null);
-  const betaRef = useRef<number | null>(null);
-  const keysDownRef = useRef<Set<string>>(new Set());
-  const obstaclesRef = useRef<Obstacle[]>([]);
-  const cooldownRef = useRef(0);
-  const damageCooldownRef = useRef(0);
+let currentGamma = 0, currentBeta = 0;
+let hasGyro = false;
+let baseBeta = null;
+let baseGamma = null;
+const keysDown = new Set();
+let obstacles = [];
+let bullets = [];
+let cooldown = 0;
+let damageCooldown = 0;
+let lastFireTime = 0;
+
+let lastTime = performance.now();
+
+const elStartScreen = document.getElementById('start-screen');
+const elGameUI = document.getElementById('game-ui');
+const elStartBtn = document.getElementById('start-btn');
+const elScore = document.getElementById('score-ui');
+const elLevel = document.getElementById('level-ui');
+const elTargetLeft = document.getElementById('target-left');
+const elTargetRight = document.getElementById('target-right');
+const elShip = document.getElementById('spaceship-container');
+const elShipWord = document.getElementById('spaceship-word');
+const elObstaclesLayer = document.getElementById('obstacles-layer');
+const elEffectsLayer = document.getElementById('effects-layer');
+const elDamageFlash = document.getElementById('damage-flash');
+const warpBg = document.getElementById('warp-bg');
+const elLivesUI = document.getElementById('lives-ui');
+const elGameOverScreen = document.getElementById('game-over-screen');
+const elRestartGameBtn = document.getElementById('restart-game-btn');
+const elFinalScore = document.getElementById('final-score-ui');
+const elAttackLeftBtn = document.getElementById('attack-left-btn');
+const elAttackRightBtn = document.getElementById('attack-right-btn');
+const elPauseBtn = document.getElementById('pause-btn');
+const elPauseScreen = document.getElementById('pause-screen');
+const elResumeGameBtn = document.getElementById('resume-game-btn');
+const elPauseRestartGameBtn = document.getElementById('pause-restart-game-btn');
+
+function fireBullet() {
+  if (!isPlaying) return;
   
-  const targetPhysics = useRef({
-    left: { vx: 0.05, vy: 0.03, x: 25, y: 30 },
-    right: { vx: -0.04, vy: 0.06, x: 75, y: 30 }
+  // Audio feedback for laser
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1500, audioCtx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.2);
+  } catch(e) {}
+
+  // Create laser bullet DOM element
+  const el = document.createElement('div');
+  el.className = 'absolute w-2 h-7 bg-indigo-300 rounded-full shadow-[0_0_12px_rgba(129,140,248,0.9)] z-15';
+  el.style.left = `${shipLeft}%`;
+  el.style.top = `${shipTop}%`;
+  el.style.transform = 'translate(-50%, -50%)';
+  elObstaclesLayer.appendChild(el);
+
+  bullets.push({
+    el: el,
+    x: shipLeft,
+    y: shipTop - 3, // slightly ahead of spaceship
+    speed: 3 // speed of laser trajectory
   });
+}
 
-  const floatingTextsRef = useRef<{id:number, text:string, x:number, y:number, color:string}[]>([]);
-  const explosionsRef = useRef<{id:number, x:number, y:number, color:string, particles:{angle:number, distance:number, size:number}[]}[]>([]);
-  const [, setExplosionsVal] = useState(0);
+function tryFire() {
+  if (!isPlaying || isPaused) return;
+  const now = performance.now();
+  if (now - lastFireTime > 250) {
+    fireBullet();
+    lastFireTime = now;
+  }
+}
 
-  const engineAudioCtxRef = useRef<AudioContext | null>(null);
-  const engineOscRef = useRef<OscillatorNode | null>(null);
-  const engineGainRef = useRef<GainNode | null>(null);
-  const engineFilterRef = useRef<BiquadFilterNode | null>(null);
+function updateLivesUI() {
+  elLivesUI.innerHTML = '';
+  for(let i=0; i<lives; i++) {
+    const icon = document.createElement('div');
+    icon.innerHTML = `<svg viewBox="0 0 100 120" class="w-full h-auto drop-shadow-md opacity-90"><path d="M 30 70 L 10 110 L 30 100 Z" fill="#ef4444" /><path d="M 70 70 L 90 110 L 70 100 Z" fill="#ef4444" /><rect x="30" y="30" width="40" height="70" rx="20" fill="#e2e8f0" /><path d="M 30 40 Q 50 -10 70 40 Z" fill="#cbd5e1" /><circle cx="50" cy="55" r="16" fill="#cffafe" stroke="#475569" stroke-width="4" /><rect x="40" y="100" width="20" height="10" fill="#475569" /></svg>`;
+    elLivesUI.appendChild(icon);
+  }
+}
 
-  const initEngineSound = useCallback(() => {
-    if (engineAudioCtxRef.current) return;
-    try {
-      const actx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      engineAudioCtxRef.current = actx;
-      const osc = actx.createOscillator();
-      const gain = actx.createGain();
-      const filter = actx.createBiquadFilter();
-      
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(60, actx.currentTime);
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(150, actx.currentTime);
+function gameOver() {
+  isPlaying = false;
+  elGameOverScreen.classList.remove('hidden');
+  elGameOverScreen.classList.add('flex');
+  elFinalScore.textContent = `最終得分: ${score}`;
+}
 
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(actx.destination);
-      
-      gain.gain.setValueAtTime(0, actx.currentTime);
-      osc.start();
-      
-      engineOscRef.current = osc;
-      engineGainRef.current = gain;
-      engineFilterRef.current = filter;
-    } catch(e) {}
-  }, []);
+let ytPlayer = null;
 
-  const updateEngineSound = useCallback((changeX: number, changeY: number, playing: boolean) => {
-    const actx = engineAudioCtxRef.current;
-    const gain = engineGainRef.current;
-    const osc = engineOscRef.current;
-    const filter = engineFilterRef.current;
-    
-    if (!actx || !gain || !osc || !filter) return;
+function onYouTubeIframeAPIReady() {
+  const div = document.createElement('div');
+  div.id = 'yt-player-container';
+  div.style.display = 'none';
+  document.body.appendChild(div);
 
-    if (!playing) {
-      gain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
-      return;
+  ytPlayer = new YT.Player('yt-player-container', {
+    height: '0',
+    width: '0',
+    videoId: 'a_qbIyvBNZQ',
+    playerVars: {
+      'autoplay': 0,
+      'controls': 0,
+      'loop': 1,
+      'playlist': 'a_qbIyvBNZQ'
     }
+  });
+}
 
-    const speed = Math.sqrt(changeX * changeX + changeY * changeY);
-    const normalizedSpeed = Math.min(speed / 1.5, 1.0);
+const tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+const firstScriptTag = document.getElementsByTagName('script')[0];
+firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
-    if (normalizedSpeed > 0.05) {
-      const targetGain = normalizedSpeed * 0.15;
-      gain.gain.setTargetAtTime(targetGain, actx.currentTime, 0.1);
-      
-      const targetFreq = 40 + Math.min(normalizedSpeed, 1) * 60;
-      osc.frequency.setTargetAtTime(targetFreq, actx.currentTime, 0.1);
-      
-      const targetFilterFreq = 100 + normalizedSpeed * 400;
-      filter.frequency.setTargetAtTime(targetFilterFreq, actx.currentTime, 0.1);
-    } else {
-      gain.gain.setTargetAtTime(0, actx.currentTime, 0.1);
-    }
-  }, []);
+function playSpaceBGM() {
+  if (ytPlayer && ytPlayer.playVideo) {
+    ytPlayer.setVolume(40);
+    ytPlayer.playVideo();
+  }
+}
 
-  const playSuccessSound = useCallback(() => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+function playAudioWithCurve(type, f1, f2, f3) {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f1, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(f2, audioCtx.currentTime + 0.1);
+    if(f3) osc.frequency.exponentialRampToValueAtTime(f3, audioCtx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
+  } catch(e) {}
+}
+
+function playSuccessSound() { playAudioWithCurve('sine', 400, 800, 1200); }
+function playFailSound() { playAudioWithCurve('triangle', 300, 150); }
+function playWarningBeep() { playAudioWithCurve('sawtooth', 200, 50); }
+
+function playLevelUpSound() {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    [ 400, 500, 600, 800 ].forEach((freq, idx) => {
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
-      osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.2);
-      
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-      
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.15);
+      gain.gain.setValueAtTime(0, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime + idx * 0.15 + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.15 + 0.4);
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.3);
-    } catch(e) {}
-  }, []);
+      osc.start(audioCtx.currentTime + idx * 0.15);
+      osc.stop(audioCtx.currentTime + idx * 0.15 + 0.4);
+    });
+  } catch(e) {}
+}
 
-  const playFailSound = useCallback(() => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.3);
-      
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-      
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.3);
-    } catch(e) {}
-  }, []);
+function triggerLevelUp() {
+  playLevelUpSound();
+  
+  obstacles.forEach(o => { if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el); });
+  obstacles = [];
 
-  const playWarningBeep = useCallback(() => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
-      
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-      
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.3);
-    } catch(e) {}
-  }, []);
-
-  const addFloatingText = useCallback((text: string, x: number, y: number, color: string) => {
-    const id = Date.now() + Math.random();
-    floatingTextsRef.current.push({id, text, x, y, color});
-    setFloatingTextsVal(v => v + 1);
-    
+  const text = document.createElement('div');
+  text.className = 'absolute top-1/2 left-1/2 z-50 text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-lime-300 to-cyan-300 whitespace-nowrap pointer-events-none';
+  text.style.filter = 'drop-shadow(0 0 20px rgba(163,230,53,0.8))';
+  text.style.transition = 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+  text.style.transform = 'translate(-50%, -50%) scale(0.5)';
+  text.style.opacity = '0';
+  text.textContent = 'LEVEL UP!';
+  
+  elEffectsLayer.appendChild(text);
+  
+  requestAnimationFrame(() => {
+    text.style.opacity = '1';
+    text.style.transform = 'translate(-50%, -50%) scale(1.2)';
+  });
+  
+  setTimeout(() => {
+    text.style.transition = 'all 0.5s ease-in';
+    text.style.opacity = '0';
+    text.style.transform = 'translate(-50%, -50%) scale(2)';
     setTimeout(() => {
-      floatingTextsRef.current = floatingTextsRef.current.filter(t => t.id !== id);
-      setFloatingTextsVal(v => v + 1);
-    }, 1500);
-  }, []);
+      if(elEffectsLayer.contains(text)) elEffectsLayer.removeChild(text);
+    }, 500);
+  }, 1500);
+}
 
-  const addExplosion = useCallback((x: number, y: number, color: string) => {
-    const id = Date.now() + Math.random();
-    const particles = Array.from({ length: 24 }).map((_, i) => ({
-      angle: (i / 24) * Math.PI * 2 + Math.random() * 0.2,
-      distance: Math.random() * 150 + 40,
-      size: Math.random() * 1 + 0.5
-    }));
-    explosionsRef.current.push({ id, x, y, color, particles });
-    setExplosionsVal(v => v + 1);
-    
-    setTimeout(() => {
-      explosionsRef.current = explosionsRef.current.filter(e => e.id !== id);
-      setExplosionsVal(v => v + 1);
-    }, 800);
-  }, []);
+function initWarpStars() {
+  warpBg.innerHTML = '';
+  for(let i=0; i<40; i++){
+    const d = document.createElement('div');
+    d.className = 'absolute w-[2px] bg-gradient-to-b from-transparent via-white to-transparent opacity-80';
+    const left = Math.random() * 100;
+    const delay = Math.random() * 2;
+    const dur = Math.random() * 0.5 + 0.5;
+    d.style.left = `${left}%`;
+    d.style.height = '40px';
+    d.style.animation = `warp ${dur * 3}s linear infinite`;
+    d.style.animationDelay = `${delay}s`;
+    d.dataset.baseDur = dur;
+    warpBg.appendChild(d);
+  }
+}
+initWarpStars();
 
-  // Main game logic loop
-  useEffect(() => {
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      gammaRef.current = e.gamma;
-      betaRef.current = e.beta;
-    };
-    window.addEventListener('deviceorientation', handleOrientation);
+function updateWarpSpeed() {
+  for(let i=0; i<warpBg.children.length; i++){
+    const d = warpBg.children[i];
+    const dur = parseFloat(d.dataset.baseDur);
+    d.style.animationDuration = isPlaying ? `${dur / (1 + (level - 1)*0.2)}s` : `${dur * 3}s`;
+  }
+}
 
-    const handleKeyDown = (e: KeyboardEvent) => keysDownRef.current.add(e.key);
-    const handleKeyUp = (e: KeyboardEvent) => keysDownRef.current.delete(e.key);
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-
-    let frameId: number;
-    let lastTime = performance.now();
-    
-    const loop = (time: number) => {
-      const dt = Math.min(time - lastTime, 50);
-      lastTime = time;
-      const dtScale = dt / 16;
-      const currentLvl = levelRef.current;
-
-      if (isPlayingRef.current) {
-        if (cooldownRef.current > 0) cooldownRef.current -= dt;
-        if (damageCooldownRef.current > 0) damageCooldownRef.current -= dt;
-
-        let changeX = 0;
-        let changeY = 0;
-        let targetTilt = 0;
-        
-        // Tilt Control (Gyro)
-        const gamma = gammaRef.current;
-        if (gamma !== null && Math.abs(gamma) > 5) {
-          const boundedGamma = Math.max(-45, Math.min(45, gamma));
-          changeX = +(boundedGamma / 45) * 2.5 * dtScale;
-          targetTilt = (boundedGamma / 45) * 30;
-        }
-
-        const beta = betaRef.current;
-        if (beta !== null) {
-          let boundedBeta = beta - 45; // Assume 45deg is flat/neutral
-          if (Math.abs(boundedBeta) > 5) {
-            boundedBeta = Math.max(-45, Math.min(45, boundedBeta));
-            changeY = +(boundedBeta / 45) * 2.5 * dtScale;
-          }
-        }
-
-        // Keyboard Control
-        const keys = keysDownRef.current;
-        if (keys.has('ArrowLeft')) { changeX = -1.5 * dtScale; targetTilt = -25; }
-        if (keys.has('ArrowRight')) { changeX = 1.5 * dtScale; targetTilt = 25; }
-        if (keys.has('ArrowUp')) { changeY = -1.5 * dtScale; }
-        if (keys.has('ArrowDown')) { changeY = 1.5 * dtScale; }
-
-        if (changeX !== 0 || changeY !== 0) {
-          leftPercent.set(Math.min(Math.max(leftPercent.get() + changeX, 10), 90));
-          topPercent.set(Math.min(Math.max(topPercent.get() + changeY, 15), 90));
-        }
-
-        const currentTilt = tiltAngle.get();
-        tiltAngle.set(currentTilt + (targetTilt - currentTilt) * 0.15);
-        
-        updateEngineSound(changeX, changeY, true);
-
-        // Target Floating Physics (Speed scales with level)
-        const tp = targetPhysics.current;
-        const speedMult = 1 + (currentLvl - 1) * 0.5;
-        tp.left.x += tp.left.vx * dtScale * speedMult;
-        tp.left.y += tp.left.vy * dtScale * speedMult;
-        if (tp.left.x < 15 || tp.left.x > 45) tp.left.vx *= -1;
-        if (tp.left.y < 20 || tp.left.y > 60) tp.left.vy *= -1;
-        t1X.set(tp.left.x);
-        t1Y.set(tp.left.y);
-
-        tp.right.x += tp.right.vx * dtScale * speedMult;
-        tp.right.y += tp.right.vy * dtScale * speedMult;
-        if (tp.right.x < 55 || tp.right.x > 85) tp.right.vx *= -1;
-        if (tp.right.y < 20 || tp.right.y > 60) tp.right.vy *= -1;
-        t2X.set(tp.right.x);
-        t2Y.set(tp.right.y);
-
-        // Meteorite Spawn
-        const spawnRate = 0.01 + (currentLvl * 0.01);
-        if (Math.random() < spawnRate) {
-          obstaclesRef.current.push({
-            id: Date.now() + Math.random(),
-            x: Math.random() * 80 + 10,
-            y: -10,
-            speed: Math.random() * 0.6 + 0.4 + (currentLvl * 0.5),
-            hit: false,
-            rotation: Math.random() * 360,
-          });
-        }
-
-        const shipX = leftPercent.get();
-        const shipY = topPercent.get();
-
-        // Ship-Target Collision
-        let hitZone: string | null = null;
-        if (Math.hypot(tp.left.x - shipX, tp.left.y - shipY) < 12) hitZone = 'left';
-        else if (Math.hypot(tp.right.x - shipX, tp.right.y - shipY) < 12) hitZone = 'right';
-
-        if (hitZone && cooldownRef.current <= 0) {
-          const q = currentQuestionRef.current;
-          const isCorrect = (hitZone === 'left' && q.isLeftCorrect) || (hitZone === 'right' && !q.isLeftCorrect);
-          if (isCorrect) {
-            setScore(s => s + 100);
-            playSuccessSound();
-            addFloatingText("+100", shipX, shipY - 10, "text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,1)]");
-            addExplosion(shipX, shipY, q.correctRadical.hex);
-            
-            setCurrentQuestion(generateQuestion());
-            cooldownRef.current = 1500; 
-          } else {
-            setScore(s => Math.max(0, s - 20));
-            playFailSound();
-            addFloatingText("-20", shipX, shipY - 10, "text-red-400 drop-shadow-[0_0_10px_rgba(248,113,113,1)]");
-            
-            // Bounce ship to center bottom
-            leftPercent.set(50);
-            topPercent.set(80);
-            tiltAngle.set(0);
-            cooldownRef.current = 1000;
-          }
-        }
-
-        // Meteorite Update & Collision
-        let didHitObstacle = false;
-        obstaclesRef.current.forEach(obs => {
-          obs.y += obs.speed * dtScale;
-          obs.rotation += obs.speed * 2;
-          
-          if (!obs.hit) {
-            // Shrink distance check to 50% of visual size
-            if (Math.hypot((obs.x - shipX)*0.8, obs.y - shipY) < 4) {
-              obs.hit = true;
-              didHitObstacle = true;
-            }
-          }
-        });
-
-        if (didHitObstacle && damageCooldownRef.current <= 0) {
-          setScore(s => Math.max(0, s - 10));
-          addFloatingText("-10", shipX, shipY - 10, "text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,1)]");
-          playWarningBeep();
-          
-          damageCooldownRef.current = 1500;
-
-          const el = document.getElementById('damage-flash');
-          if (el) {
-            el.style.opacity = '1';
-            setTimeout(() => { el.style.opacity = '0' }, 300);
-          }
-          
-          const shipEl = document.getElementById('spaceship-container');
-          if (shipEl) {
-            shipEl.style.animation = 'damageBlink 0.2s infinite alternate';
-            setTimeout(() => { shipEl.style.animation = 'none' }, 1500);
-          }
-        }
-
-        obstaclesRef.current = obstaclesRef.current.filter(o => o.y < 120 && !o.hit);
-        
-        // Sync obstacles rendering
-        setObstacles([...obstaclesRef.current]);
-      } else {
-        updateEngineSound(0, 0, false);
-      }
-      frameId = requestAnimationFrame(loop);
-    };
-    
-    frameId = requestAnimationFrame(loop);
-    
-    return () => {
-      window.removeEventListener('deviceorientation', handleOrientation);
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      cancelAnimationFrame(frameId);
-    };
-  }, [leftPercent, topPercent, tiltAngle, t1X, t1Y, t2X, t2Y, playWarningBeep, playSuccessSound, playFailSound, addFloatingText, addExplosion, updateEngineSound]);
-
-  const startGame = async () => {
-    if (
-      typeof window.DeviceOrientationEvent !== 'undefined' &&
-      typeof (window.DeviceOrientationEvent as any).requestPermission === 'function'
-    ) {
-      try {
-        const permission = await (window.DeviceOrientationEvent as any).requestPermission();
-        if (permission !== 'granted') {
-          alert('未能獲取陀螺儀權限。請允許權限，或使用鍵盤（方向鍵）遊玩。');
-        }
-      } catch (err) {
-        console.error('Permission request failed:', err);
-      }
-    }
-    
-    // Play sound to initialize audio context
-    try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        audioCtx.resume();
-    } catch(e) {}
-    
-    initEngineSound();
-    
-    leftPercent.set(50);
-    topPercent.set(80);
-    tiltAngle.set(0);
-    setScore(0);
-    setCurrentQuestion(generateQuestion());
-    obstaclesRef.current = [];
-    setObstacles([]);
-    targetPhysics.current = {
-      left: { vx: 0.05, vy: 0.03, x: 25, y: 30 },
-      right: { vx: -0.04, vy: 0.06, x: 75, y: 30 }
-    };
-    setGameState('playing');
-  };
-
-  const warpStars = useMemo(() => Array.from({ length: 40 }).map((_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    delay: Math.random() * 2,
-    duration: Math.random() * 0.5 + 0.5
-  })), []);
-
+function updateTargetsUI() {
   const leftTarget = currentQuestion.isLeftCorrect ? currentQuestion.correctRadical : currentQuestion.wrongRadical;
   const rightTarget = currentQuestion.isLeftCorrect ? currentQuestion.wrongRadical : currentQuestion.correctRadical;
 
-  return (
-    <div className="relative w-full h-screen bg-gradient-to-b from-indigo-950 to-slate-900 text-white overflow-hidden flex flex-col font-sans select-none touch-none">
-      <style>{`
-        @keyframes warp {
-          0% { transform: translateY(-100vh); opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { transform: translateY(100vh); opacity: 0; }
-        }
-        @keyframes damageBlink {
-          0% { opacity: 1; filter: drop-shadow(0 0 10px rgba(239,68,68,1)); }
-          100% { opacity: 0.3; filter: drop-shadow(0 0 20px rgba(239,68,68,1)); }
-        }
-      `}</style>
+  document.getElementById('tl-ring1').style.borderColor = leftTarget.hex;
+  document.getElementById('tl-ring2').style.borderColor = leftTarget.hex;
+  const tlBg = document.getElementById('tl-bg');
+  tlBg.style.borderColor = leftTarget.hex;
+  tlBg.style.boxShadow = `0 0 20px ${leftTarget.hex}66`;
+  document.getElementById('tl-text').textContent = leftTarget.radical;
 
-      {/* Warp Speed Background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-        {warpStars.map(star => (
-          <div 
-            key={star.id}
-            className="absolute w-[2px] bg-gradient-to-b from-transparent via-white to-transparent opacity-80"
-            style={{
-              left: `${star.left}%`,
-              height: '40px',
-              animationName: 'warp',
-              animationDuration: `${gameState === 'playing' ? star.duration / (1 + (level - 1)*0.2) : star.duration * 3}s`,
-              animationTimingFunction: 'linear',
-              animationIterationCount: 'infinite',
-              animationDelay: `${star.delay}s`
-            }}
-          />
-        ))}
-      </div>
-
-      <div 
-        id="damage-flash" 
-        className="absolute inset-0 bg-red-600/60 z-50 pointer-events-none transition-opacity duration-300"
-        style={{ opacity: 0 }}
-      />
-      
-      {/* Floating Texts Layer */}
-      {floatingTextsRef.current.map(ft => (
-        <motion.div
-           key={ft.id}
-           className={`absolute z-50 font-black text-4xl lg:text-5xl text-center pointer-events-none ${ft.color}`}
-           initial={{ opacity: 1, scale: 0.5, y: 0 }}
-           animate={{ opacity: 0, scale: 1.5, y: -50 }}
-           transition={{ duration: 1.5, ease: "easeOut" }}
-           style={{ left: `${ft.x}%`, top: `${ft.y}%`, x: '-50%', y: '-50%' }}
-        >
-           {ft.text}
-        </motion.div>
-      ))}
-
-      {/* Explosions Layer */}
-      {explosionsRef.current.map(exp => (
-        <div key={exp.id} className="absolute pointer-events-none z-40" style={{ left: `${exp.x}%`, top: `${exp.y}%` }}>
-          {exp.particles.map((p, i) => (
-            <motion.div
-              key={i}
-              className="absolute w-2 h-2 md:w-3 md:h-3 rounded-full origin-center mix-blend-screen"
-              style={{ 
-                backgroundColor: exp.color, 
-                boxShadow: `0 0 15px ${exp.color}`, 
-                x: '-50%', 
-                y: '-50%' 
-              }}
-              initial={{ x: '-50%', y: '-50%', opacity: 1, scale: p.size }}
-              animate={{ 
-                x: `calc(-50% + ${Math.cos(p.angle) * p.distance}px)`, 
-                y: `calc(-50% + ${Math.sin(p.angle) * p.distance}px)`, 
-                opacity: 0, 
-                scale: p.size * 0.2
-              }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-            />
-          ))}
-        </div>
-      ))}
-
-      <AnimatePresence>
-        {gameState === 'start' && (
-          <motion.div 
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-indigo-950/95 backdrop-blur-sm"
-          >
-            <h1 className="text-4xl md:text-5xl font-bold mb-4 font-mono text-lime-300 text-center px-4">小一專注力航行者</h1>
-            <p className="text-xl md:text-2xl text-slate-300 mb-8 max-w-md text-center">
-              請讓裝置保持水平
-              <br />
-              <span className="text-sm text-slate-400 mt-2 block">(電腦用戶可使用方向鍵操作)</span>
-            </p>
-            <button 
-              onClick={startGame}
-              className="px-8 py-5 bg-fuchsia-500 hover:bg-fuchsia-400 active:scale-95 transition-all text-white text-2xl md:text-3xl font-bold rounded-full shadow-[0_0_20px_rgba(217,70,239,0.5)] cursor-pointer"
-            >
-              🚀 點擊開始航行
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Main Game Surface */}
-      <div className="absolute inset-0 z-10 pointer-events-none flex flex-col">
-        {/* Top Header */}
-        <div className="flex justify-between items-start px-4 md:px-8 pt-8 w-full">
-          <div className="bg-slate-900/80 border-2 border-lime-400 px-6 py-2 rounded-xl backdrop-blur-md shadow-[0_0_15px_rgba(163,230,53,0.3)] pointer-events-none flex items-center space-x-4">
-             <div className="text-center">
-                 <div className="text-xs text-lime-300 font-bold uppercase tracking-widest text-center">關卡</div>
-                 <div className="text-2xl font-black text-white text-center tabular-nums">Level {level}</div>
-             </div>
-             <div className="w-px h-10 bg-lime-400/30"></div>
-             <div className="text-center">
-                 <div className="text-xs text-lime-300 font-bold uppercase tracking-widest text-center">分數</div>
-                 <div className="text-2xl font-black text-white text-center tabular-nums">{score}</div>
-             </div>
-          </div>
-          
-          <motion.h2 className="text-xl md:text-3xl font-bold text-lime-300 bg-slate-900/80 py-2 px-6 rounded-full backdrop-blur-md shadow-lg border border-lime-300/30 text-center max-w-md pointer-events-none">
-             移動到正確部件
-          </motion.h2>
-        </div>
-
-        {/* Space Stations */}
-        <motion.div 
-          className="absolute w-[70px] md:w-[100px] flex flex-col justify-center items-center pointer-events-none"
-          style={{ left: useTransform(t1X, v=>`${v}%`), top: useTransform(t1Y, v=>`${v}%`), x: '-50%', y: '-50%' }}
-        >
-          <div className="relative w-full aspect-square flex items-center justify-center">
-            <div className="absolute inset-0 border-[4px] border-dashed rounded-full animate-[spin_15s_linear_infinite]" style={{ borderColor: leftTarget.hex }} />
-            <div className="absolute inset-1.5 border-2 rounded-full animate-[spin_20s_linear_infinite_reverse]" style={{ borderColor: leftTarget.hex, opacity: 0.5 }} />
-            <div className="relative z-10 w-11 h-11 md:w-14 md:h-14 bg-slate-900 border-2 md:border-4 rounded-full flex flex-col items-center justify-center shadow-lg" style={{ borderColor: leftTarget.hex, boxShadow: `0 0 20px ${leftTarget.hex}66` }}>
-              <span className="text-xl md:text-2xl font-black text-white">{leftTarget.radical}</span>
-            </div>
-          </div>
-        </motion.div>
-        
-        <motion.div 
-          className="absolute w-[70px] md:w-[100px] flex flex-col justify-center items-center pointer-events-none"
-          style={{ left: useTransform(t2X, v=>`${v}%`), top: useTransform(t2Y, v=>`${v}%`), x: '-50%', y: '-50%' }}
-        >
-          <div className="relative w-full aspect-square flex items-center justify-center">
-            <div className="absolute inset-0 border-[4px] border-dashed rounded-full animate-[spin_15s_linear_infinite]" style={{ borderColor: rightTarget.hex }} />
-            <div className="absolute inset-1.5 border-2 rounded-full animate-[spin_20s_linear_infinite_reverse]" style={{ borderColor: rightTarget.hex, opacity: 0.5 }} />
-            <div className="relative z-10 w-11 h-11 md:w-14 md:h-14 bg-slate-900 border-2 md:border-4 rounded-full flex flex-col items-center justify-center shadow-lg" style={{ borderColor: rightTarget.hex, boxShadow: `0 0 20px ${rightTarget.hex}66` }}>
-              <span className="text-xl md:text-2xl font-black text-white">{rightTarget.radical}</span>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Meteorites */}
-        {obstacles.map(obs => (
-          <div
-            key={obs.id}
-            className="absolute z-10 pointer-events-none"
-            style={{
-              left: `${obs.x}%`,
-              top: `${obs.y}%`,
-              transform: `translate(-50%, -50%) rotate(${obs.rotation}deg)`,
-              filter: 'drop-shadow(0 0 10px rgba(239,68,68,0.5))'
-            }}
-          >
-            <svg viewBox="0 0 64 64" className="w-10 h-10 md:w-14 md:h-14">
-              <path d="M 12 24 L 20 10 L 40 8 L 54 20 L 58 40 L 44 56 L 24 58 L 10 46 Z" fill="#57534e" stroke="#78716c" strokeWidth="4" />
-              <circle cx="24" cy="24" r="4" fill="#44403c" />
-              <circle cx="40" cy="36" r="6" fill="#44403c" />
-              <circle cx="20" cy="40" r="3" fill="#44403c" />
-            </svg>
-          </div>
-        ))}
-
-        {/* Spaceship */}
-        <motion.div 
-          id="spaceship-container"
-          style={{ 
-            left: useTransform(leftPercent, v => `${v}%`), 
-            top: useTransform(topPercent, v => `${v}%`), 
-            x: '-50%', y: '-50%', 
-            rotate: tiltAngle 
-          }}
-          className="absolute w-24 h-32 md:w-32 md:h-40 z-20 pointer-events-none"
-        >
-          <svg viewBox="0 0 100 120" className="w-full h-full drop-shadow-2xl overflow-visible">
-            {/* Engine Thrust */}
-            <g style={{ transformOrigin: '50% 100%', animation: 'spin 0.2s infinite alternate' }}>
-              <ellipse cx="50" cy="115" rx="8" ry="15" fill="#facc15" />
-              <ellipse cx="50" cy="115" rx="4" ry="25" fill="#ef4444" opacity="0.8" />
-            </g>
-            <path d="M 30 70 L 10 110 L 30 100 Z" fill="#ef4444" />
-            <path d="M 70 70 L 90 110 L 70 100 Z" fill="#ef4444" />
-            <rect x="30" y="30" width="40" height="70" rx="20" fill="#e2e8f0" />
-            <path d="M 30 40 Q 50 -10 70 40 Z" fill="#cbd5e1" />
-            <circle cx="50" cy="55" r="16" fill="#cffafe" stroke="#475569" strokeWidth="4" />
-            <text x="50" y="57" dominantBaseline="middle" textAnchor="middle" fontSize="18" fontWeight="bold" fill="#0f172a">
-              {currentQuestion.word}
-            </text>
-            <rect x="40" y="100" width="20" height="10" fill="#475569" />
-          </svg>
-        </motion.div>
-
-        {/* Instructions */}
-        <div className="absolute bottom-10 left-0 right-0 text-center text-slate-400 text-lg md:text-xl font-medium tracking-wide">
-          左右/前後傾斜來控制太空船
-          <br/>
-          ( ⬅️ ➡️ ⬆️ ⬇️ )
-        </div>
-      </div>
-    </div>
-  );
+  document.getElementById('tr-ring1').style.borderColor = rightTarget.hex;
+  document.getElementById('tr-ring2').style.borderColor = rightTarget.hex;
+  const trBg = document.getElementById('tr-bg');
+  trBg.style.borderColor = rightTarget.hex;
+  trBg.style.boxShadow = `0 0 20px ${rightTarget.hex}66`;
+  document.getElementById('tr-text').textContent = rightTarget.radical;
+  
+  elShipWord.textContent = currentQuestion.word;
+  elScore.textContent = score;
+  elLevel.textContent = `Level ${level}`;
 }
 
+function spawnFloatingText(text, x, y, textColor, shadowColor) {
+  const div = document.createElement('div');
+  div.className = `floating-text text-4xl lg:text-5xl`;
+  div.textContent = text;
+  div.style.left = `${x}%`;
+  div.style.top = `${y}%`;
+  div.style.color = textColor;
+  div.style.filter = `drop-shadow(0 0 10px ${shadowColor})`;
+  elEffectsLayer.appendChild(div);
+  
+  requestAnimationFrame(() => {
+    div.style.transform = 'translate(-50%, -150%) scale(1.5)';
+    div.style.opacity = '0';
+  });
+
+  setTimeout(() => {
+    if(elEffectsLayer.contains(div)) elEffectsLayer.removeChild(div);
+  }, 1500);
+}
+
+function spawnExplosion(x, y, hexColor) {
+  const div = document.createElement('div');
+  div.className = 'absolute pointer-events-none z-40';
+  div.style.left = `${x}%`;
+  div.style.top = `${y}%`;
+  
+  for(let i=0; i<24; i++) {
+    const angle = (i/24) * Math.PI*2 + Math.random()*0.2;
+    const dist = Math.random()*150 + 40;
+    const size = Math.random()*1 + 0.5;
+    
+    const p = document.createElement('div');
+    p.className = 'explosion-particle w-2 h-2 md:w-3 md:h-3';
+    p.style.backgroundColor = hexColor;
+    p.style.boxShadow = `0 0 15px ${hexColor}`;
+    p.style.transform = `translate(-50%, -50%) scale(${size})`;
+    
+    requestAnimationFrame(() => {
+      p.style.transform = `translate(calc(-50% + ${Math.cos(angle)*dist}px), calc(-50% + ${Math.sin(angle)*dist}px)) scale(${size*0.2})`;
+      p.style.opacity = '0';
+    });
+    
+    div.appendChild(p);
+  }
+  
+  elEffectsLayer.appendChild(div);
+  setTimeout(() => {
+    if(elEffectsLayer.contains(div)) elEffectsLayer.removeChild(div);
+  }, 800);
+}
+
+function loop(time) {
+  if (!time) time = performance.now();
+  const dt = Math.max(0, Math.min(time - lastTime, 50)) || 16;
+  lastTime = time;
+  if (isPaused) {
+    requestAnimationFrame(loop);
+    return;
+  }
+  const dtScale = dt / 16;
+  
+  if (isPlaying) {
+    if (cooldown > 0) cooldown -= dt;
+    if (damageCooldown > 0) damageCooldown -= dt;
+
+    let targetTilt = 0;
+    let accelX = 0;
+    let accelY = 0;
+    
+    if (hasGyro) {
+      if (baseBeta === null || baseGamma === null) {
+        baseBeta = currentBeta;
+        baseGamma = currentGamma;
+      }
+      
+      let dGamma = currentGamma - baseGamma;
+      let dBeta = currentBeta - baseBeta;
+      
+      // 加入「平滑死區(Deadzone)」，小於2度不加速，大於2度才開始線性加速
+      const deadzone = 2;
+      
+      if (Math.abs(dGamma) > deadzone) {
+        let activeGamma = dGamma > 0 ? dGamma - deadzone : dGamma + deadzone;
+        let bounded = Math.max(-45, Math.min(45, activeGamma));
+        // 傾斜角度轉換為「加速度 (accel)」，而不是直接的速度
+        accelX = (bounded / 45) * sensitivity * dtScale;
+        targetTilt = (bounded / 45) * 30; // 飛船圖示的視覺傾斜
+      }
+      
+      if (Math.abs(dBeta) > deadzone) {
+        let activeBeta = dBeta > 0 ? dBeta - deadzone : dBeta + deadzone;
+        let bounded = Math.max(-45, Math.min(45, activeBeta));
+        accelY = (bounded / 45) * sensitivity * dtScale;
+      }
+    }
+    
+    // 鍵盤控制也改為套用「加速度」
+    if (keysDown.has('ArrowLeft')) { accelX = -sensitivity * 1.05 * dtScale; targetTilt = -25; }
+    if (keysDown.has('ArrowRight')) { accelX = sensitivity * 1.05 * dtScale; targetTilt = 25; }
+    if (keysDown.has('ArrowUp')) { accelY = -sensitivity * 1.05 * dtScale; }
+    if (keysDown.has('ArrowDown')) { accelY = sensitivity * 1.05 * dtScale; }
+
+    // 【核心物理引擎】：新的速度 = (原本速度 + 加速度) * 摩擦力
+    vx = (vx + accelX) * friction;
+    vy = (vy + accelY) * friction;
+
+    // 將算好的速度加到飛船的位置上
+    shipLeft += vx;
+    shipTop += vy;
+
+    // 碰到邊界時的處理（將速度歸零，避免卡在邊界抖動）
+    if (shipLeft < 10) { shipLeft = 10; vx = 0; }
+    if (shipLeft > 90) { shipLeft = 90; vx = 0; }
+    if (shipTop < 15) { shipTop = 15; vy = 0; }
+    if (shipTop > 90) { shipTop = 90; vy = 0; }
+    
+    // 讓飛船視覺上的旋轉更平滑
+    tiltAngle += (targetTilt - tiltAngle) * 0.15;
+    
+    elShip.style.left = `${shipLeft}%`;
+    elShip.style.top = `${shipTop}%`;
+    elShip.style.transform = `translate(-50%, -50%) rotate(${tiltAngle}deg)`;
+
+    const speedMult = 1 + (level - 1)*0.5;
+    t1X += targetVxL * dtScale * speedMult;
+    t1Y += targetVyL * dtScale * speedMult;
+    if(t1X < 15 || t1X > 45) targetVxL *= -1;
+    if(t1Y < 20 || t1Y > 60) targetVyL *= -1;
+    elTargetLeft.style.left = `${t1X}%`;
+    elTargetLeft.style.top = `${t1Y}%`;
+
+    t2X += targetVxR * dtScale * speedMult;
+    t2Y += targetVyR * dtScale * speedMult;
+    if(t2X < 55 || t2X > 85) targetVxR *= -1;
+    if(t2Y < 20 || t2Y > 60) targetVyR *= -1;
+    elTargetRight.style.left = `${t2X}%`;
+    elTargetRight.style.top = `${t2Y}%`;
+
+    const spawnRate = 0.01 + (level * 0.01);
+    if(Math.random() < spawnRate) {
+      const obs = document.createElement('div');
+      obs.className = 'absolute z-10';
+      obs.innerHTML = `<svg viewBox="0 0 64 64" class="w-10 h-10 md:w-14 md:h-14"><path d="M 12 24 L 20 10 L 40 8 L 54 20 L 58 40 L 44 56 L 24 58 L 10 46 Z" fill="#57534e" stroke="#78716c" stroke-width="4"/><circle cx="24" cy="24" r="4" fill="#44403c"/><circle cx="40" cy="36" r="6" fill="#44403c"/><circle cx="20" cy="40" r="3" fill="#44403c"/></svg>`;
+      obs.style.filter = 'drop-shadow(0 0 10px rgba(239,68,68,0.5))';
+      
+      const obj = {
+        el: obs,
+        x: Math.random()*80 + 10,
+        y: -10,
+        speed: (Math.random()*0.6 + 0.4) * (1 + (level - 1) * 0.05),
+        rotation: Math.random()*360,
+        scaleMult: 1 + (level - 1) * 0.05,
+        hit: false
+      };
+      obstacles.push(obj);
+      elObstaclesLayer.appendChild(obs);
+    }
+    
+    let didHitOb = false;
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      const o = obstacles[i];
+      o.y += o.speed * dtScale;
+      o.rotation += o.speed * 2;
+      
+      o.el.style.left = `${o.x}%`;
+      o.el.style.top = `${o.y}%`;
+      o.el.style.transform = `translate(-50%, -50%) rotate(${o.rotation}deg) scale(${o.scaleMult})`;
+      
+      if(!o.hit) {
+        if(Math.hypot((o.x - shipLeft)*0.8, o.y - shipTop) < 4 * o.scaleMult) {
+          o.hit = true;
+          didHitOb = true;
+        }
+      }
+      
+      if(o.y > 120) {
+        if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el);
+        obstacles.splice(i, 1);
+      }
+    }
+
+    // Update laser bullets and check collisions with asteroids
+    for (let bIdx = bullets.length - 1; bIdx >= 0; bIdx--) {
+      const b = bullets[bIdx];
+      b.y -= b.speed * dtScale;
+      b.el.style.top = `${b.y}%`;
+      b.el.style.left = `${b.x}%`;
+      
+      let destroyedBullet = false;
+      
+      // Check laser vs asteroid collision
+      for (let oIdx = obstacles.length - 1; oIdx >= 0; oIdx--) {
+        const o = obstacles[oIdx];
+        if (!o.hit) {
+          // Distance check
+          const dist = Math.hypot(o.x - b.x, o.y - b.y);
+          if (dist < 6 * o.scaleMult) {
+            o.hit = true;
+            destroyedBullet = true;
+            
+            // Blast asteroid
+            spawnExplosion(o.x, o.y, '#f87171');
+            
+            if (elObstaclesLayer.contains(o.el)) {
+              elObstaclesLayer.removeChild(o.el);
+            }
+            obstacles.splice(oIdx, 1);
+
+            // Add 10 points for destroying an asteroid
+            score += 10;
+            const newLevel = Math.min(5, Math.floor(score/1000)+1);
+            if (newLevel > level) {
+              level = newLevel;
+              triggerLevelUp();
+            }
+            updateTargetsUI();
+            updateWarpSpeed();
+            spawnFloatingText("+10", o.x, o.y - 15, "#4ade80", "rgba(74,222,128,1)");
+            
+            // Explosion sound element
+            try {
+              const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.25);
+              gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.start();
+              osc.stop(audioCtx.currentTime + 0.25);
+            } catch(e) {}
+            
+            break; 
+          }
+        }
+      }
+      
+      if (destroyedBullet || b.y < -10) {
+        if (elObstaclesLayer.contains(b.el)) {
+          elObstaclesLayer.removeChild(b.el);
+        }
+        bullets.splice(bIdx, 1);
+      }
+    }
+
+    if(didHitOb && damageCooldown <= 0) {
+      lives = Math.max(0, lives - 1);
+      // Removed "-1 生命" text display per user prompt
+      playWarningBeep();
+      damageCooldown = 1500;
+      updateLivesUI();
+      
+      elDamageFlash.style.opacity = '1';
+      setTimeout(()=>elDamageFlash.style.opacity='0', 300);
+      elShip.style.animation = 'damageBlink 0.2s infinite alternate';
+      setTimeout(()=>elShip.style.animation='none', 1500);
+      
+      if (lives <= 0) {
+        gameOver();
+      }
+    }
+
+    let hitZone = null;
+    if (Math.hypot(t1X - shipLeft, t1Y - shipTop) < 12) hitZone = 'left';
+    else if (Math.hypot(t2X - shipLeft, t2Y - shipTop) < 12) hitZone = 'right';
+
+    if (hitZone && cooldown <= 0) {
+      const q = currentQuestion;
+      const isCorrect = (hitZone === 'left' && q.isLeftCorrect) || (hitZone === 'right' && !q.isLeftCorrect);
+      if(isCorrect) {
+        score += 100;
+        const newLevel = Math.min(5, Math.floor(score/1000)+1);
+        if (newLevel > level) {
+          level = newLevel;
+          triggerLevelUp();
+        } else {
+          playSuccessSound();
+        }
+        
+        spawnFloatingText("+100", shipLeft, shipTop-10, "#4ade80", "rgba(74,222,128,1)");
+        spawnExplosion(shipLeft, shipTop, q.correctRadical.hex);
+        
+        currentQuestion = generateQuestion();
+        cooldown = 1500;
+      } else {
+        score = Math.max(0, score - 20);
+        playFailSound();
+        spawnFloatingText("-20", shipLeft, shipTop-10, "#f87171", "rgba(248,113,113,1)");
+        
+        shipLeft = 50;
+        shipTop = 80;
+        tiltAngle = 0;
+        cooldown = 1000;
+      }
+      updateTargetsUI();
+      updateWarpSpeed();
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('deviceorientation', e => {
+  if (e.gamma === null || e.beta === null) return;
+  if (e.gamma === 0 && e.beta === 0 && e.alpha === 0) return;
+  hasGyro = true;
+  currentGamma = e.gamma;
+  currentBeta = e.beta;
+});
+
+function resetGame() {
+  shipLeft = 50; shipTop = 80; tiltAngle = 0;
+  vx = 0; vy = 0;
+  score = 0; level = 1; lives = 10;
+  isPaused = false;
+  document.body.classList.remove('paused-animation');
+  if (elPauseScreen) {
+    elPauseScreen.classList.remove('flex');
+    elPauseScreen.classList.add('hidden');
+  }
+  currentQuestion = generateQuestion();
+  obstacles.forEach(o => { if(elObstaclesLayer.contains(o.el)) elObstaclesLayer.removeChild(o.el); });
+  obstacles = [];
+  
+  // Clear bullets
+  bullets.forEach(b => { if(elObstaclesLayer.contains(b.el)) elObstaclesLayer.removeChild(b.el); });
+  bullets = [];
+
+  t1X = 25; t1Y = 30; t2X = 75; t2Y = 30;
+  targetVxL = 0.05; targetVyL = 0.03; targetVxR = -0.04; targetVyR = 0.06;
+  
+  baseBeta = null;
+  baseGamma = null;
+  
+  updateTargetsUI();
+  updateWarpSpeed();
+  updateLivesUI();
+  
+  elGameOverScreen.classList.add('hidden');
+  elGameOverScreen.classList.remove('flex');
+}
+
+function togglePause(paused) {
+  if (!isPlaying) return;
+  isPaused = paused;
+  if (isPaused) {
+    document.body.classList.add('paused-animation');
+    if (elPauseScreen) {
+      elPauseScreen.classList.remove('hidden');
+      elPauseScreen.classList.add('flex');
+    }
+  } else {
+    document.body.classList.remove('paused-animation');
+    if (elPauseScreen) {
+      elPauseScreen.classList.remove('flex');
+      elPauseScreen.classList.add('hidden');
+    }
+    lastTime = performance.now();
+  }
+}
+
+const elRestartBtn = document.getElementById('restart-btn');
+if(elRestartBtn) {
+  elRestartBtn.addEventListener('click', () => {
+    resetGame();
+  });
+}
+if(elRestartGameBtn) {
+  elRestartGameBtn.addEventListener('click', () => {
+    resetGame();
+    isPlaying = true;
+  });
+}
+if (elPauseBtn) {
+  elPauseBtn.addEventListener('click', (e) => {
+    togglePause(!isPaused);
+    if(e.target) e.target.blur();
+  });
+}
+if (elResumeGameBtn) {
+  elResumeGameBtn.addEventListener('click', (e) => {
+    togglePause(false);
+    if(e.target) e.target.blur();
+  });
+}
+if (elPauseRestartGameBtn) {
+  elPauseRestartGameBtn.addEventListener('click', (e) => {
+    togglePause(false);
+    resetGame();
+    isPlaying = true;
+    if(e.target) e.target.blur();
+  });
+}
+
+// Attach event listeners to attack buttons
+if (elAttackLeftBtn) {
+  elAttackLeftBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    tryFire();
+  });
+}
+if (elAttackRightBtn) {
+  elAttackRightBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    tryFire();
+  });
+}
+
+window.addEventListener('keydown', e => {
+  keysDown.add(e.key);
+  if (e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault();
+    tryFire();
+  }
+  if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+    e.preventDefault();
+    if (!e.repeat) {
+      togglePause(!isPaused);
+    }
+  }
+});
+window.addEventListener('keyup', e => keysDown.delete(e.key));
+
+elStartBtn.addEventListener('click', async () => {
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const p = await DeviceOrientationEvent.requestPermission();
+      if(p !== 'granted') alert('未能獲取陀螺儀權限。請允許權限，或使用鍵盤（方向鍵）遊玩。');
+    } catch(err) { console.error(err); }
+  }
+  
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume();
+  } catch(e) {}
+  
+  playSpaceBGM();
+  
+  resetGame();
+  
+  elStartScreen.classList.add('hidden');
+  elGameUI.classList.remove('hidden');
+  elGameUI.classList.add('flex');
+  isPlaying = true;
+});
+
+updateTargetsUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
